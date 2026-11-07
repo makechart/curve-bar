@@ -1,14 +1,17 @@
 module.exports =
   pkg:
     name: 'curve-bar', version: '0.0.1'
-    extend: {name: "@makechart/base"}
+    # lite: 不帶 d3 的 base. 補間改用 chart.anim, 可以逐格錄影 ( 見 @plotdb/chart utils/anim )
+    extend: {name: "@makechart/base", path: "lite/index.html"}
     dependencies: []
 
   init: ({root, context, pubsub}) ->
     pubsub.fire \init, mod: mod {context}
 
 mod = ({context}) ->
-  {d3,legend,chart} = context
+  {chart} = context
+  {scale: Scale, shape, anim: {join}} = chart.utils
+  svgns = "http://www.w3.org/2000/svg"
   sample: ->
     raw: [1 to 5].map (val) ~> {val: (10 * Math.random!).toFixed(1), name: "N#{val}"}
     binding:
@@ -26,12 +29,12 @@ mod = ({context}) ->
     value: {type: \R, name: "value"}
     name: {type: \N, name: "name"}
   init: ->
-    @gview = d3.select @layout.get-group \view
-    @g = @gview.append \g
+    @gview = @layout.get-group \view
+    @g = @gview.appendChild document.createElementNS(svgns, \g)
     @tint = tint = new chart.utils.tint!
     @parsed = []
 
-    @arc = d3.arc!
+    @arc = shape.arc!
       .innerRadius 0
       .outerRadius 100
       .startAngle 0
@@ -40,7 +43,7 @@ mod = ({context}) ->
     @legend = new chart.utils.legend do
       root: @root
       name: 'legend'
-      shape: (d) -> d3.select(@).attr \fill, tint.get d.text
+      shape: (d) -> @setAttribute \fill, tint.get d.text
       layout: @layout
     @legend.on \select, ~> @parse!; @bind!; @resize!; @render!
 
@@ -52,8 +55,10 @@ mod = ({context}) ->
       ret <<< n{cur, old}
       return ret
 
+    # 同 d3.extent: 略過 null / NaN
+    vs = @parsed.map(-> it.value).filter -> it? and it >= it
     @extent =
-      v: d3.extent @parsed.map -> it.value
+      v: if vs.length => [Math.min.apply(Math, vs), Math.max.apply(Math, vs)] else [undefined, undefined]
     @legend.data @parsed.map -> {key: it.name, text: it.name}
 
   resize: ->
@@ -72,8 +77,8 @@ mod = ({context}) ->
     [w,h] = [box.width, box.height]
     size = Math.min(w,h)
     @scale =
-      v: d3.scaleLinear!domain [0, @extent.v.1] .range [0, Math.PI * 3 / 2]
-      r: d3.scaleBand!
+      v: Scale.linear!domain [0, @extent.v.1] .range [0, Math.PI * 3 / 2]
+      r: Scale.band!
         .domain (@parsed.filter(->!it._removing).map (d,i) -> i)
         .range [@cfg.curve.hole * size/2, size/2]
   render: ->
@@ -99,35 +104,42 @@ mod = ({context}) ->
       @arc!
 
     box = @layout.get-box \view
-    @g.attr \transform, "translate(#{box.width / 2},#{box.height / 2})"
-    @g.selectAll \path.data .data _parsed, (->it._idx)
-      ..exit!each (d,i) ~>
-        d._removing = true
-        d.old <<< d.cur{a,ri,ro}
-        d.cur <<<
-          a: scale.v(0)
-          ri: scale.r(i) + bw/2 - bw/2 * (1 - @cfg.curve.padding)
-          ro: scale.r(i) + bw/2 - bw/2 * (1 - @cfg.curve.padding)
-      ..exit!transition!delay 350
-        .on \end, (d) -> if d._removing => d3.select(@).remove!
-      ..enter!append \path .attr \class, \data
-    @g.selectAll \path.data
-      .transition!duration 350
-      .attrTween \d, (d,i) -> interpolate-arc d.old, d.cur, i
-      .attr \fill, (d,i) ~> @tint.get d.name or d._idx
-    @g.selectAll \text.label .data _parsed, (->it._idx)
-      ..exit!remove!
-      ..enter!append \text
-        .attr \class, \label
-        .attr \opacity, 0
-        .attr \y, (d,i) -> -scale.r(i)
-        .attr \dy, -bw * 1/4
-    @g.selectAll \text.label
-      .attr \dominant-baseline, \center
-      .attr \text-anchor, \end
-      .attr \x, \-.5em
-      .text (d,i) -> d.name
-      .transition!duration 350
-      .attr \opacity, 1
-      .attr \y, (d,i) -> -scale.r(i)
-      .attr \dy, -bw * 1/4
+    @g.setAttribute \transform, "translate(#{box.width / 2},#{box.height / 2})"
+    tween = (n, attrs, opt = {}) ~> @anim.tween n, attrs, {duration: 350} <<< opt
+    key = (d) -> d._idx
+
+    pj = join root: @g, tag: \path, cls: \data, data: _parsed, key: key
+    # 移除的先縮回 0 再拿掉 ( d3 版的移除會被接著的補間取消, 縮成 0 的 path 一直留著 )
+    pj.exit.map (n, i) ~>
+      d = n.__data__
+      d._removing = true
+      d.old <<< d.cur{a,ri,ro}
+      d.cur <<<
+        a: scale.v(0)
+        ri: scale.r(i) + bw/2 - bw/2 * (1 - @cfg.curve.padding)
+        ro: scale.r(i) + bw/2 - bw/2 * (1 - @cfg.curve.padding)
+      tween n, {d: interpolate-arc(d.old, d.cur, i)}, {remove: true}
+    pj.nodes.map (n, i) ~>
+      d = n.__data__
+      tween n, do
+        d: interpolate-arc d.old, d.cur, i
+        fill: @tint.get d.name or d._idx
+
+    # 移除後又加回來的 path 會排到最後; 把標籤移到它們後面, 維持標籤疊在 path 上
+    Array.from(@g.querySelectorAll ":scope > text.label").map ~> @g.appendChild it
+    lj = join root: @g, tag: \text, cls: \label, data: _parsed, key: key
+    lj.exit.map (n) ~>
+      @anim.interrupt n
+      n.remove!
+    lj.enter.map (n, i) ->
+      d = n.__data__
+      n.setAttribute \opacity, 0
+      n.setAttribute \y, -scale.r(_parsed.indexOf d)
+      n.setAttribute \dy, -bw * 1/4
+    lj.nodes.map (n, i) ->
+      d = n.__data__
+      n.setAttribute \dominant-baseline, \center
+      n.setAttribute \text-anchor, \end
+      n.setAttribute \x, \-.5em
+      n.textContent = d.name
+      tween n, {opacity: 1, y: -scale.r(i), dy: -bw * 1/4}
