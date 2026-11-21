@@ -25,6 +25,9 @@ mod = ({context}) ->
     curve:
       padding: type: \number, default: 0.1, min: 0, max: 1, step: 0.01, desc: {en: "space between the rings, as a fraction of each ring's slot ( 0 to 1 )", "zh-TW": "圓環之間的間距，以每圈所佔寬度的比例表示 ( 0 到 1 )"}
       hole: type: \number, default: 0.5, min: 0, max: 1, step: 0.01, desc: {en: "size of the empty center, as a fraction of the radius ( 0 to 1 )", "zh-TW": "中間留空的大小，以半徑的比例表示 ( 0 到 1 )"}
+  # 段落 ( tab ) 的說明, key 是段落的路徑. preset 的段落由 chart.utils.config.tabinfo 掛上來, 共用的 common 與各處的 font 段落由核心補
+  tabinfo: chart.utils.config.tabinfo({legend: \legend}) <<<
+    curve: desc: {en: "spacing between the rings and the size of the empty center", "zh-TW": "圓環之間的間距與中間留空的大小"}
   dimension:
     value: {type: \R, name: "value"}
     name: {type: \N, name: "name"}
