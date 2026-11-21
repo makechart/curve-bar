@@ -21,10 +21,10 @@ mod = ({context}) ->
     preset: \default
     legend: \legend
   }) <<<
-    sort: type: \choice, values: <[asc desc none]>, default: \desc
+    sort: type: \choice, values: <[asc desc none]>, default: \desc, desc: {en: "order of the rings: desc puts the largest value on the outside, asc puts it on the inside, none keeps the data order", "zh-TW": "圓環的排列順序：desc 最大值在最外圈，asc 最大值在最內圈，none 照資料原本的順序"}
     curve:
-      padding: type: \number, default: 0.1, min: 0, max: 1, step: 0.01
-      hole: type: \number, default: 0.5, min: 0, max: 1, step: 0.01
+      padding: type: \number, default: 0.1, min: 0, max: 1, step: 0.01, desc: {en: "space between the rings, as a fraction of each ring's slot ( 0 to 1 )", "zh-TW": "圓環之間的間距，以每圈所佔寬度的比例表示 ( 0 到 1 )"}
+      hole: type: \number, default: 0.5, min: 0, max: 1, step: 0.01, desc: {en: "size of the empty center, as a fraction of the radius ( 0 to 1 )", "zh-TW": "中間留空的大小，以半徑的比例表示 ( 0 到 1 )"}
   dimension:
     value: {type: \R, name: "value"}
     name: {type: \N, name: "name"}
